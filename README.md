@@ -32,7 +32,7 @@ npm run build
 
 <script src="lib/mfa-hijack-validator.1.0.3.min.js"></script>
 <script>
-  window.initMFAHajackValidator({
+  window.initMFAHijackValidator({
     uidSelector: '#username',           // 用户标识选择器（可选）
     clickSelector: '#loginBtn',         // 点击事件拦截选择器（可选）
     enterSelector: '#password',         // Enter键拦截选择器（可选）
@@ -105,7 +105,7 @@ npm run build
 ### 支持多个拦截选择器
 
 ```javascript
-window.initMFAHajackValidator({
+window.initMFAHijackValidator({
   uidSelector: '#userId',
   clickSelector: ['#deleteBtn', '#submitBtn', '.critical-action'],  // 多个选择器
   sendCode: async (uid) => { /* ... */ },
@@ -116,7 +116,7 @@ window.initMFAHajackValidator({
 ### 自定义 UI 文本
 
 ```javascript
-window.initMFAHajackValidator({
+window.initMFAHijackValidator({
   clickSelector: '#pay',
   sendCode: async (uid) => { /* ... */ },
   verifyCode: async (id, code) => { /* ... */ },
@@ -125,14 +125,14 @@ window.initMFAHajackValidator({
   cancelText: '取消支付',
   inputPlaceholder: '请输入短信验证码',
   errorText: '验证码输入错误，请检查后重试',
-  maxVerifyAttempts: 3  // 允许多次操作
+  maxVerifyAttempts: 1  // 允许多次操作
 });
 ```
 
 ### 获取验证控制器销毁验证器
 
 ```javascript
-const controller = window.initMFAHajackValidator({
+const controller = window.initMFAHijackValidator({
   /* 配置项 */
 });
 
@@ -169,7 +169,7 @@ controller.destroy();
 ```html
 <input id="username" type="text" value="john@example.com" />
 <script>
-  window.initMFAHajackValidator({
+  window.initMFAHijackValidator({
     uidSelector: '#username',  // 会获取输入框的值：'john@example.com'
     clickSelector: '#loginBtn',
     sendCode: async (uid) => {
@@ -197,8 +197,8 @@ controller.destroy();
 
 ## 编译输出文件
 
-- `lib/mfa-hijack-validator.1.0.3.js` - 未压缩版本
-- `lib/mfa-hijack-validator.1.0.3.min.js` - 压缩版本
+- `lib/mfa-hijack-validator.${version}.js` 
+- `lib/mfa-hijack-validator.${version}.min.js`
 
 ## 浏览器兼容性
 

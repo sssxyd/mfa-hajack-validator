@@ -136,7 +136,7 @@ function getResponsiveConfig(isMobile: boolean) {
   }
 }
 
-interface MFAHajackValidatorOptions {
+interface MFAHijackValidatorOptions {
   uidSelector: string | null; // 用户唯一标识选择器
   clickSelector?: string | string[] | null; // click 事件选择器（可选）
   enterSelector?: string | string[] | null; // enter 事件选择器（可选）
@@ -150,14 +150,15 @@ interface MFAHajackValidatorOptions {
   maxVerifyAttempts?: number; // 最大验证次数，默认为1
 }
 
-interface MFAHajackValidatorController {
+interface MFAHijackValidatorController {
   destroy: () => void;
 }
 
-const MODAL_ID = 'mfa-hajack-validator-modal';
+const MODAL_ID = 'mfa-hijack-validator-modal';
 const allowedClickElements = new WeakSet<HTMLElement>();
 
-function initMFAHajackValidator(options: MFAHajackValidatorOptions): MFAHajackValidatorController {
+function initMFAHijackValidator(options: MFAHijackValidatorOptions): MFAHijackValidatorController {
+  console.log('MFAHijackValidator init');
   // 至少需要一个 selector（click 或 enter）
   const hasClickSelector = options.clickSelector && (Array.isArray(options.clickSelector) ? options.clickSelector.length > 0 : true);
   const hasEnterSelector = options.enterSelector && (Array.isArray(options.enterSelector) ? options.enterSelector.length > 0 : true);
@@ -167,6 +168,7 @@ function initMFAHajackValidator(options: MFAHajackValidatorOptions): MFAHajackVa
   }
 
   let pendingElement: HTMLElement | null = null;
+  let pendingEventType: 'click' | 'keydown' = 'click'; // 记录触发方式
   const maxAttempts = options.maxVerifyAttempts ?? 1; // 默认最多验证1次
   let verifySuccessCount = 0; // 验证成功计数器
   
@@ -188,13 +190,14 @@ function initMFAHajackValidator(options: MFAHajackValidatorOptions): MFAHajackVa
     }
   }
 
-  const triggerMFA = (element: HTMLElement) => {
+  const triggerMFA = (element: HTMLElement, eventType: 'click' | 'keydown' = 'click') => {
     // 检查是否已达到最大验证次数
     if (verifySuccessCount >= maxAttempts) {
       return false;
     }
 
     pendingElement = element;
+    pendingEventType = eventType; // 记录事件类型
 
     // 获取 uid 并发送验证码
     (async () => {
@@ -206,14 +209,14 @@ function initMFAHajackValidator(options: MFAHajackValidatorOptions): MFAHajackVa
             pendingElement = null;
           }, () => {
             verifySuccessCount++;
-          }, result.message);
+          }, result.message, pendingEventType);
           return;
         }
         openModal(options, result.id, () => pendingElement, () => {
           pendingElement = null;
         }, () => {
           verifySuccessCount++; // 验证成功，计数器加1
-        });
+        }, undefined, pendingEventType);
       } catch (error) {
         console.error('获取验证码失败:', error);
       }
@@ -246,7 +249,7 @@ function initMFAHajackValidator(options: MFAHajackValidatorOptions): MFAHajackVa
       return; // 不阻止默认行为
     }
 
-    if (!triggerMFA(guardedElement)) {
+    if (!triggerMFA(guardedElement, 'click')) {
       return;
     }
 
@@ -276,7 +279,7 @@ function initMFAHajackValidator(options: MFAHajackValidatorOptions): MFAHajackVa
       return;
     }
 
-    if (!triggerMFA(guardedElement)) {
+    if (!triggerMFA(guardedElement, 'keydown')) {
       return;
     }
 
@@ -299,12 +302,13 @@ function initMFAHajackValidator(options: MFAHajackValidatorOptions): MFAHajackVa
 }
 
 function openModal(
-  options: MFAHajackValidatorOptions,
+  options: MFAHijackValidatorOptions,
   mfaSessionId: string,
   getPendingElement: () => HTMLElement | null,
   clearPendingElement: () => void,
   onVerifySuccess?: () => void,
-  initialError?: string
+  initialError?: string,
+  pendingEventType: 'click' | 'keydown' = 'click'
 ): void {
   const isMobile = isMobileDevice();
   const config = getResponsiveConfig(isMobile);
@@ -445,7 +449,27 @@ function openModal(
       }
       allowedClickElements.add(currentPending);
       closeAndClear();
-      currentPending.click();
+      
+      // 根据触发方式重放对应的事件
+      if (pendingEventType === 'keydown') {
+        // 重放 Enter 键事件
+        const keyEvent = new KeyboardEvent('keydown', {
+          key: 'Enter',
+          code: 'Enter',
+          bubbles: true,
+          cancelable: true,
+          view: window
+        });
+        currentPending.dispatchEvent(keyEvent);
+      } else {
+        // 重放 click 事件
+        const clickEvent = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          view: window
+        });
+        currentPending.dispatchEvent(clickEvent);
+      }
     } catch {
       message.textContent = options.errorText ?? '验证码错误，请重试';
       input.value = '';
@@ -504,5 +528,5 @@ function closeModal(): void {
 
 // 导出为全局方法（在 IIFE 中通过 global 参数传入）
 if (typeof (global as any) !== 'undefined') {
-  (global as any).initMFAHajackValidator = initMFAHajackValidator;
+  (global as any).initMFAHijackValidator = initMFAHijackValidator;
 }
