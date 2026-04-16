@@ -193,7 +193,8 @@ controller.destroy();
 
 ## 完整工作示例
 
-请查看 [example.html](example.html) 文件，它包含了一个完整的登录表单演示，展示如何集成 MFA 验证器。
+请查看 [example.html](example.html) 文件，它包含了一个完整的登录表单演示，展示如何集成 MFA 验证器。  
+example.html 的用户名为 admin 密码为 123456
 
 ## 编译输出文件
 
