@@ -2,10 +2,9 @@
   "name": "mfa-hajack-validator",
   "version": "1.0.0",
   "description": "",
-  "main": "lib/index.js",
   "scripts": {
     "test": "echo \"No tests configured\"",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && node build.js"
   },
   "repository": {
     "type": "git",
