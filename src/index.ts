@@ -148,10 +148,12 @@ interface MFAHijackValidatorOptions {
   inputPlaceholder?: string;
   errorText?: string;
   maxVerifyAttempts?: number; // 最大验证次数，默认为1
+  autoRedetect?: boolean; // 是否在selector找不到时自动重新检测，默认为true
 }
 
 interface MFAHijackValidatorController {
   destroy: () => void;
+  redetect?: () => void; // 手动重新检测selector
 }
 
 const MODAL_ID = 'mfa-hijack-validator-modal';
@@ -159,6 +161,9 @@ const allowedClickElements = new WeakSet<HTMLElement>();
 
 function initMFAHijackValidator(options: MFAHijackValidatorOptions): MFAHijackValidatorController {
   console.log('MFAHijackValidator init');
+  console.log('Click selectors:', options.clickSelector);
+  console.log('Enter selectors:', options.enterSelector);
+  
   // 至少需要一个 selector（click 或 enter）
   const hasClickSelector = options.clickSelector && (Array.isArray(options.clickSelector) ? options.clickSelector.length > 0 : true);
   const hasEnterSelector = options.enterSelector && (Array.isArray(options.enterSelector) ? options.enterSelector.length > 0 : true);
@@ -188,6 +193,93 @@ function initMFAHijackValidator(options: MFAHijackValidatorOptions): MFAHijackVa
     } else {
       enterSelectors.push(options.enterSelector);
     }
+  }
+
+  // 检测selector是否存在的辅助函数
+  const detectSelectors = (): { clickExists: boolean; enterExists: boolean } => {
+    let clickExists = false;
+    let enterExists = false;
+    
+    for (const selector of clickSelectors) {
+      if (document.querySelector(selector)) {
+        clickExists = true;
+        console.log(`✓ Click selector found: "${selector}"`);
+        break;
+      }
+    }
+    
+    for (const selector of enterSelectors) {
+      if (document.querySelector(selector)) {
+        enterExists = true;
+        console.log(`✓ Enter selector found: "${selector}"`);
+        break;
+      }
+    }
+    
+    return { clickExists, enterExists };
+  };
+
+  // 初始化时检测一次
+  const initialDetection = detectSelectors();
+  // selectorsFound: 只要配置的selector都找到了就算找到
+  // 例：只配置了clickSelector -> 只需clickExists为true
+  //     都配置了 -> 都需要为true
+  let selectorsFound = (clickSelectors.length === 0 || initialDetection.clickExists) && 
+                       (enterSelectors.length === 0 || initialDetection.enterExists);
+  
+  if (!initialDetection.clickExists && clickSelectors.length > 0) {
+    console.warn('⚠ No click selector found on page. Will work after DOM update.');
+  }
+  if (!initialDetection.enterExists && enterSelectors.length > 0) {
+    console.warn('⚠ No enter selector found on page. Will work after DOM update.');
+  }
+
+  // 自动检测 mutation observer
+  let mutationObserver: MutationObserver | null = null;
+  const enableAutoRedetect = (): void => {
+    if (mutationObserver) {
+      return; // 已经启用
+    }
+
+    if (options.autoRedetect === false) {
+      return;
+    }
+
+    console.log('🔍 Auto-redetect enabled. Listening for DOM changes until selectors are found...');
+    mutationObserver = new MutationObserver(() => {
+      if (selectorsFound) {
+        // 已经找到了，不再检测
+        return;
+      }
+
+      const detection = detectSelectors();
+      
+      // 检查是否现在找到了之前没找到的selector
+      const clickNowExists = detection.clickExists || clickSelectors.length === 0;
+      const enterNowExists = detection.enterExists || enterSelectors.length === 0;
+      
+      if (clickNowExists && enterNowExists) {
+        console.log('✨ All selectors found! Stopping auto-redetect.');
+        selectorsFound = true;
+        // 停止监听，因为已经找到了
+        if (mutationObserver) {
+          mutationObserver.disconnect();
+          mutationObserver = null;
+        }
+      }
+    });
+
+    mutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: false,
+      characterData: false
+    });
+  };
+
+  // 如果初始selector未完全找到，且autoRedetect为true，启用自动检测
+  if (!selectorsFound && options.autoRedetect !== false) {
+    enableAutoRedetect();
   }
 
   const triggerMFA = (element: HTMLElement, eventType: 'click' | 'keydown' = 'click') => {
@@ -231,15 +323,49 @@ function initMFAHijackValidator(options: MFAHijackValidatorOptions): MFAHijackVa
       return;
     }
 
+    console.log('Click detected on:', target, 'Selectors to check:', clickSelectors);
+
     // 检查是否匹配任何一个 selector
     let guardedElement: HTMLElement | null = null;
     for (const selector of clickSelectors) {
-      guardedElement = target.closest(selector) as HTMLElement | null;
-      if (guardedElement) {
+      let matched: HTMLElement | null = null;
+      
+      // 方法1：检查 target 本身是否匹配选择器
+      try {
+        if (target.matches(selector)) {
+          matched = target as HTMLElement;
+          console.log('Element matched directly with selector:', selector);
+        }
+      } catch (e) {
+        // 某些复杂选择器可能不支持 matches
+      }
+      
+      // 方法2：检查 target 的祖先是否匹配
+      if (!matched) {
+        matched = target.closest(selector) as HTMLElement | null;
+      }
+      
+      // 方法3：如果前两种方法都失败，查询所有匹配的元素并检查 target 是否在其中
+      if (!matched && typeof document.querySelector === 'function') {
+        const allMatched = document.querySelectorAll(selector);
+        console.log(`Selector "${selector}" found ${allMatched.length} elements`);
+        for (let i = 0; i < allMatched.length; i++) {
+          if (allMatched[i] === target || allMatched[i].contains(target as Node)) {
+            matched = allMatched[i] as HTMLElement;
+            console.log('Matched with querySelector:', matched);
+            break;
+          }
+        }
+      }
+      
+      if (matched) {
+        console.log('Element matched with selector:', selector);
+        guardedElement = matched;
         break;
       }
     }
     if (!guardedElement) {
+      console.log('No element matched any selector');
       return;
     }
 
@@ -270,8 +396,35 @@ function initMFAHijackValidator(options: MFAHijackValidatorOptions): MFAHijackVa
     // 检查是否匹配任何一个 enter selector
     let guardedElement: HTMLElement | null = null;
     for (const selector of enterSelectors) {
-      guardedElement = target.closest(selector) as HTMLElement | null;
-      if (guardedElement) {
+      let matched: HTMLElement | null = null;
+      
+      // 方法1：检查 target 本身是否匹配选择器
+      try {
+        if (target.matches(selector)) {
+          matched = target as HTMLElement;
+        }
+      } catch (e) {
+        // 某些复杂选择器可能不支持 matches
+      }
+      
+      // 方法2：检查 target 的祖先是否匹配
+      if (!matched) {
+        matched = target.closest(selector) as HTMLElement | null;
+      }
+      
+      // 方法3：如果前两种方法都失败，查询所有匹配的元素并检查 target 是否在其中
+      if (!matched && typeof document.querySelector === 'function') {
+        const allMatched = document.querySelectorAll(selector);
+        for (let i = 0; i < allMatched.length; i++) {
+          if (allMatched[i] === target || allMatched[i].contains(target as Node)) {
+            matched = allMatched[i] as HTMLElement;
+            break;
+          }
+        }
+      }
+      
+      if (matched) {
+        guardedElement = matched;
         break;
       }
     }
@@ -296,7 +449,18 @@ function initMFAHijackValidator(options: MFAHijackValidatorOptions): MFAHijackVa
     destroy: () => {
       document.removeEventListener('click', clickListener, true);
       document.removeEventListener('keydown', keydownListener, true);
+      if (mutationObserver) {
+        mutationObserver.disconnect();
+        mutationObserver = null;
+      }
       closeModal();
+    },
+    redetect: () => {
+      console.log('🔄 Redetecting selectors...');
+      const detection = detectSelectors();
+      if (!detection.clickExists && !detection.enterExists) {
+        console.warn('⚠ No selectors found after redetection');
+      }
     }
   };
 }
