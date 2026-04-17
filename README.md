@@ -30,7 +30,7 @@ npm run build
 ```html
 <button id="loginBtn" class="need-mfa">登录</button>
 
-<script src="lib/mfa-hijack-validator.1.0.3.min.js"></script>
+<script src="lib/mfa-hijack-validator.1.0.5.min.js"></script>
 <script>
   window.initMFAHijackValidator({
     uidSelector: '#username',           // 用户标识选择器（可选）
